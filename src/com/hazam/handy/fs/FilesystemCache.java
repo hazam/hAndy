@@ -8,62 +8,89 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
+import android.content.Context;
 import android.os.Environment;
+import android.util.Log;
 
 public class FilesystemCache {
-	private String rootDirectory;
-	private String rootOnSDCard;
-	
-	public FilesystemCache(String rootDirectory) {
-		this.rootDirectory = rootDirectory;
-		rootOnSDCard = "/sdcard/" + rootDirectory;
-		
-		File rootFile = new File(rootOnSDCard);
-		if (!rootFile.exists()) {
-			rootFile.mkdir();
-		} else {
-			if (!rootFile.isDirectory()) {
-				// il nome per la cache e' usato da un file...
-				throw new RuntimeException("Filename already in use.");
-			}
-		}
+	private File root;
+	private final Context appCtx;
+
+	public static String printEnvDirs() {
+		final StringBuilder toret = new StringBuilder();
+		toret.append("*-------ENVS-------*\n");
+		toret.append("Data: "+Environment.getDataDirectory()+"\n");
+		toret.append("DownloadCache: "+Environment.getDownloadCacheDirectory()+"\n");
+		toret.append("ExternalStorage: "+Environment.getExternalStorageDirectory()+"\n");
+		toret.append("Root: "+Environment.getRootDirectory()+"\n");
+		toret.append("*-----------------*\n");
+		return toret.toString();
 	}
 	
+	public FilesystemCache(Context ctx, String cacheName) {
+		appCtx = ctx.getApplicationContext();
+		Log.d("FileSystem", printEnvDirs());
+		root = new File(appCtx.getCacheDir(), cacheName);
+		//root = new File(Environment.getExternalStorageDirectory(), cacheName);
+		if (!root.exists()) {
+			root.mkdirs();
+		} else if (!root.isDirectory()) {
+			// il nome per la cache e' usato da un file...
+			throw new RuntimeException("Filename already in use.");
+		}
+	}
+
 	public static final boolean hasSDCard() {
 		return Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED);
 	}
 	
-	public String getRootDirectory() {
-		return rootDirectory;
+	private File targetFileFor(String name) {
+		return new File(root, name);
 	}
 	
-	public void saveData(String name, byte[] data) throws IOException {
-		File file = new File(rootOnSDCard + name);
-		if (!file.exists()) {
-			file.createNewFile();
-		}
+	public boolean hasEntryFor(String name) {
+		File f = targetFileFor(name);
+		return f != null && f.exists();
+	}
+	
+	public void save(String name, InputStream src) throws IOException {
+		File file = targetFileFor(name);
+		File temp = File.createTempFile("FSCACHE", null, root);
 		
-		FileOutputStream output = new FileOutputStream(file);
+		FileOutputStream output = new FileOutputStream(temp);
+		FileUtils.copy(src, output);
+		output.flush();
+		output.close();
+		temp.renameTo(file);
+		cacheItemAdded(name);
+	}
+
+	public void save(String name, byte[] data) throws IOException {
+		File file = targetFileFor(name);
+		File temp = File.createTempFile("FSCACHE", null, root);
+		
+		FileOutputStream output = new FileOutputStream(temp);
 		output.write(data);
 		output.flush();
 		output.close();
+		temp.renameTo(file);
+		cacheItemAdded(name);
 	}
-	
-	public byte[] loadData(String name) throws IOException {
-		File file = new File(rootOnSDCard + name);
+
+	protected void cacheItemAdded(String name) {
+		//to extend
+	}
+
+	public byte[] loadBytes(String name) throws IOException {
+		File file = targetFileFor(name);
 		DataInputStream input = new DataInputStream(new FileInputStream(file));
 		byte[] data = new byte[(int) file.length()];
 		input.readFully(data);
 		return data;
 	}
-	
-	public Bitmap loadDataAsBitmap(String name) throws FileNotFoundException {
-		return BitmapFactory.decodeStream(loadDataAsInputStream(name));
-	}
-	
-	public InputStream loadDataAsInputStream(String name) throws FileNotFoundException {
-		return new FileInputStream(rootDirectory + name);
+
+	public InputStream loadInputStream(String name) throws FileNotFoundException {
+		return new FileInputStream(targetFileFor(name));
 	}
 }
+

@@ -18,10 +18,15 @@ import org.apache.http.HttpRequest;
 import org.apache.http.HttpRequestInterceptor;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpResponseInterceptor;
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.params.ConnManagerParams;
+import org.apache.http.conn.params.ConnPerRouteBean;
 import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.entity.HttpEntityWrapper;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
@@ -35,25 +40,23 @@ import android.content.pm.PackageManager;
 /**
  * DefaultHttpClient that features a couple of additional features, namely
  * <ul>
- * 	<li>UA built from application name and version</li>
- *  <li>Reasonable defaults for Socket buffer Size and Timeouts</li>
- *  <li>Support for GZIPped Entities</li>
- *  <li>Workaround for accepting invalid certificates over HTTPS</li>
- * </ul> 
+ * <li>UA built from application name and version</li>
+ * <li>Reasonable defaults for Socket buffer Size and Timeouts</li>
+ * <li>Support for GZIPped Entities</li>
+ * <li>Workaround for accepting invalid certificates over HTTPS</li>
+ * </ul>
  * 
  * @author hazam
  */
 public class BetterHttpClient extends DefaultHttpClient {
 	private static final String HEADER_ACCEPT_ENCODING = "Accept-Encoding";
 	private static final String ENCODING_GZIP = "gzip";
-	public static final int DEFAULT_TIMEOUT = 20000;
-	public static final int DEFAULT_SOCK_SIZE = 8192;
+	private static final int DEFAULT_TIMEOUT = 20000;
+	private static final int DEFAULT_SOCK_SIZE = 8192;
+	private static final int MAX_CONN = 10;
 
-	/**
-	 * @param context context to be bound. Not used in this implementation unless for {@link BetterHttpClient#buildUserAgent}
-	 * @param customUA meant to be used in subclasses, causes to call {@link BetterHttpClient#buildUserAgent}
-	 */
-	public BetterHttpClient(Context context, boolean customUA) {
+	public static BetterHttpClient buildClient(final Context ctx, final boolean customUA) {
+
 		final HttpParams params = new BasicHttpParams();
 
 		// Use generous timeouts for slow mobile networks
@@ -62,12 +65,32 @@ public class BetterHttpClient extends DefaultHttpClient {
 		HttpConnectionParams.setSoTimeout(params, DEFAULT_TIMEOUT);
 
 		HttpConnectionParams.setSocketBufferSize(params, DEFAULT_SOCK_SIZE);
+		
 		if (customUA) {
-			HttpProtocolParams.setUserAgent(params, buildUserAgent(context));
+			HttpProtocolParams.setUserAgent(params, buildUserAgent(ctx));
 		}
+		
+		ConnManagerParams.setMaxTotalConnections(params, MAX_CONN);
+		ConnManagerParams.setMaxConnectionsPerRoute(params, new ConnPerRouteBean(MAX_CONN));
 
-		setParams(params);
+		
+		final SchemeRegistry defaultSchemeReg = new DefaultHttpClient().getConnectionManager().getSchemeRegistry();
 
+		final ThreadSafeClientConnManager ccm = new ThreadSafeClientConnManager(params, defaultSchemeReg);
+
+		final BetterHttpClient toret = new BetterHttpClient(ccm, params);
+		return toret;
+	}
+
+	/**
+	 * @param context
+	 *            context to be bound. Not used in this implementation unless for
+	 *            {@link BetterHttpClient#buildUserAgent}
+	 * @param customUA
+	 *            meant to be used in subclasses, causes to call {@link BetterHttpClient#buildUserAgent}
+	 */
+	protected BetterHttpClient(ClientConnectionManager mgr, HttpParams params) {
+		super(mgr, params);
 		addRequestInterceptor(new HttpRequestInterceptor() {
 			public void process(HttpRequest request, HttpContext context) {
 				// Add header to accept gzip content
@@ -118,7 +141,7 @@ public class BetterHttpClient extends DefaultHttpClient {
 	 * Build and return a user-agent string that can identify this application to remote servers. Contains the package
 	 * name and version code.
 	 */
-	protected String buildUserAgent(Context context) {
+	public static String buildUserAgent(Context context) {
 		try {
 			final PackageManager manager = context.getPackageManager();
 			final PackageInfo info = manager.getPackageInfo(context.getPackageName(), 0);
@@ -131,11 +154,12 @@ public class BetterHttpClient extends DefaultHttpClient {
 	}
 
 	/**
-	 * Apache HTTP Client found in Android is an old version suffering from a limitation,
-	 * it has known problems in connecting via HTTPS with self-signed or unknown CA Certificates.
-	 * This implements a (dirty) workaround to make it work, accessing private variables along the way.
+	 * Apache HTTP Client found in Android is an old version suffering from a limitation, it has known problems in
+	 * connecting via HTTPS with self-signed or unknown CA Certificates. This implements a (dirty) workaround to make it
+	 * work, accessing private variables along the way.
 	 * 
-	 * @param ignore whether we sould ignore Certificates and Hostname checking or not
+	 * @param ignore
+	 *            whether we sould ignore Certificates and Hostname checking or not
 	 * @return if the operation was successful (a lot of bad thing could happen when using this hack)
 	 */
 	public boolean setIgnoreInvalidCertificates(boolean ignore) {
@@ -147,7 +171,7 @@ public class BetterHttpClient extends DefaultHttpClient {
 				Field privateStringField;
 				privateStringField = SSLSocketFactory.class.getDeclaredField("socketfactory");
 				privateStringField.setAccessible(true);
-				//TLS the most recent implementation
+				// TLS the most recent implementation
 				SSLContext context = SSLContext.getInstance("TLS");
 				context.init(null, new TrustManager[] { new NullTrustManager() }, null);
 				privateStringField.set(sf, context);
