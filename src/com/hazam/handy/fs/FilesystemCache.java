@@ -9,11 +9,12 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import android.content.Context;
+import android.graphics.BitmapFactory;
 import android.os.Environment;
 import android.util.Log;
 
 public class FilesystemCache {
-	private File root;
+	protected File root;
 	private final Context appCtx;
 
 	public static String printEnvDirs() {
@@ -44,7 +45,7 @@ public class FilesystemCache {
 		return Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED);
 	}
 	
-	private File targetFileFor(String name) {
+	protected File targetFileFor(String name) {
 		return new File(root, name);
 	}
 	
@@ -56,37 +57,16 @@ public class FilesystemCache {
 	public void save(String name, InputStream src) throws IOException {
 		File file = targetFileFor(name);
 		File temp = File.createTempFile("FSCACHE", null, root);
-		
 		FileOutputStream output = new FileOutputStream(temp);
 		FileUtils.copy(src, output);
 		output.flush();
 		output.close();
 		temp.renameTo(file);
-		cacheItemAdded(name);
+		cacheItemSaved(name);
 	}
 
-	public void save(String name, byte[] data) throws IOException {
-		File file = targetFileFor(name);
-		File temp = File.createTempFile("FSCACHE", null, root);
-		
-		FileOutputStream output = new FileOutputStream(temp);
-		output.write(data);
-		output.flush();
-		output.close();
-		temp.renameTo(file);
-		cacheItemAdded(name);
-	}
-
-	protected void cacheItemAdded(String name) {
+	protected void cacheItemSaved(String name) {
 		//to extend
-	}
-
-	public byte[] loadBytes(String name) throws IOException {
-		File file = targetFileFor(name);
-		DataInputStream input = new DataInputStream(new FileInputStream(file));
-		byte[] data = new byte[(int) file.length()];
-		input.readFully(data);
-		return data;
 	}
 
 	public InputStream loadInputStream(String name) throws FileNotFoundException {
