@@ -1,6 +1,5 @@
 package com.hazam.handy.fs;
 
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -9,7 +8,6 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import android.content.Context;
-import android.graphics.BitmapFactory;
 import android.os.Environment;
 import android.util.Log;
 

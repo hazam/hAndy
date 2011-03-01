@@ -15,13 +15,12 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.util.Log;
 
-import com.hazam.handy.graphics.ImageUtils;
-
 public class ImageCache extends FilesystemCache {
 
 	private static final String TAG = "RemoteImageView";
 	private Map<String, SoftReference<Bitmap>> memcache = new ConcurrentHashMap<String, SoftReference<Bitmap>>();
-	private OnSaveFilter filter;
+	private OnSaveFilter onSaveFilter;
+	private OnLoadFilter onLoadFilter;
 
 	public ImageCache(Context ctx, String cacheName) {
 		super(ctx, cacheName);
@@ -31,32 +30,41 @@ public class ImageCache extends FilesystemCache {
 	protected void cacheItemSaved(String name) {
 		super.cacheItemSaved(name);
 		try {
-			Bitmap justLoaded = BitmapFactory.decodeStream(loadInputStream(name));
-			// justLoaded = ImageUtils.createRoundedBitmap(justLoaded, 10);
-			// justLoaded = ImageUtils.buildReflectedBitmap(justLoaded, 6, 0xAA, 0.25f);
-			memcache.put(name, new SoftReference<Bitmap>(justLoaded));
+			loadFromDisk(name);
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
 	}
 
-	public void setFilter(OnSaveFilter filter) {
-		this.filter = filter;
+	public void setOnSaveFilter(OnSaveFilter filter) {
+		this.onSaveFilter = filter;
+	}
+
+	public void setOnLoadFilter(OnLoadFilter filter) {
+		this.onLoadFilter = filter;
 	}
 
 	private static void trace(String msg) {
 		Log.v(TAG, msg);
 	}
 
+	private Bitmap loadFromDisk(String name) throws FileNotFoundException {
+		Bitmap loaded = null;
+		if ( onLoadFilter == null) {
+			loaded = BitmapFactory.decodeStream(loadInputStream(name));
+		} else {
+			loaded = onLoadFilter.loadResolve(name, loadInputStream(name));
+		}
+		memcache.put(name, new SoftReference<Bitmap>(loaded));
+		return loaded;
+	}
+	
 	public Bitmap getBitmap(String name) {
 		SoftReference<Bitmap> sr = memcache.get(name);
 		Bitmap loaded = sr != null ? sr.get() : null;
 		if (loaded == null) {
 			try {
-				loaded = BitmapFactory.decodeStream(loadInputStream(name));
-				// loaded = ImageUtils.createRoundedBitmap(loaded, 10);
-				// loaded = ImageUtils.buildReflectedBitmap(loaded, 6, 0xAA, 0.25f);
-				memcache.put(name, new SoftReference<Bitmap>(loaded));
+				loaded = loadFromDisk(name);
 			} catch (FileNotFoundException fnfe) {
 			}
 		} else {
@@ -78,8 +86,8 @@ public class ImageCache extends FilesystemCache {
 		File file = targetFileFor(name);
 		File temp = File.createTempFile("FSCACHE", null, root);
 		FileOutputStream output = new FileOutputStream(temp);
-		if (filter != null) {
-			filter.saveResolve(name, src, output);
+		if (onSaveFilter != null) {
+			onSaveFilter.saveResolve(name, src, output);
 		} else {
 			FileUtils.copy(src, output);
 		}
@@ -91,5 +99,9 @@ public class ImageCache extends FilesystemCache {
 
 	public static interface OnSaveFilter {
 		public void saveResolve(String name, InputStream src, OutputStream out);
+	}
+
+	public static interface OnLoadFilter {
+		public Bitmap loadResolve(String name, InputStream src);
 	}
 }
