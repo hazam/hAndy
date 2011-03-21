@@ -75,7 +75,7 @@ public class BetterHttpClient extends DefaultHttpClient {
 
 		
 		final SchemeRegistry defaultSchemeReg = new DefaultHttpClient().getConnectionManager().getSchemeRegistry();
-
+		
 		final ThreadSafeClientConnManager ccm = new ThreadSafeClientConnManager(params, defaultSchemeReg);
 
 		final BetterHttpClient toret = new BetterHttpClient(ccm, params);
